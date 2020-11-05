@@ -1,0 +1,52 @@
+pipeline{
+    agent any
+    
+        tools{
+        maven 'maven3'
+    }
+    
+    environment{
+      DOCKER_TAG = getVersionDokerImage()
+    }
+
+    stages{
+        stage("SCM"){
+            steps{
+                git credentialsId: 'github', url: 'https://github.com/monoem/cicd_docker-ansible-jenkins'
+            } 
+        }
+        
+        stage("Maven build"){
+            steps{
+                sh "mvn clean package"
+            }
+        }
+        
+        stage("Docker build"){
+            steps{
+                sh "docker build . -t monoemyouneb/montomcatapp:${DOCKER_TAG}"
+            }
+        }
+        
+        stage("Docker push in dockerhub"){
+            steps{
+                withCredentials([string(credentialsId: 'dockerhub_secret_text', variable: 'dockerHubPwd')]) {
+                sh "docker login -u monoemyouneb -p ${dockerHubPwd}"
+                }
+                sh "docker push monoemyouneb/montomcatapp:${DOCKER_TAG}"
+            }
+        }
+        
+        stage("Docker deploy"){
+            steps{
+              ansiblePlaybook credentialsId: 'docker-server', disableHostKeyChecking: true, extras: "-e DOCKER_TAG=${DOCKER_TAG}", installation: 'ansible-server', inventory: 'dev.inv', playbook: 'deploy-docker_mnm.yml'
+            }
+        }
+
+    }
+}
+
+def getVersionDokerImage(){
+    def commitHash = sh label : '', returnStdout: true, script: 'git rev-parse --short HEAD'
+    return commitHash
+}
